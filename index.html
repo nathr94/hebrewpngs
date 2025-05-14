@@ -1,0 +1,193 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hebrew Word PNG Generator</title>
+    <style>
+        @font-face {
+            font-family: 'Ezra SIL';
+            src: url('EzraSIL.woff2') format('woff2'),
+                 url('EzraSIL.woff') format('woff');
+            font-weight: normal;
+            font-style: normal;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        label, input, textarea, button {
+            margin: 10px 0;
+            display: block;
+            width: 100%;
+        }
+        textarea {
+            width: 100%;
+            resize: vertical;
+        }
+        #output {
+            margin-top: 20px;
+            color: green;
+        }
+        button {
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>Hebrew Word PNG Generator</h1>
+    <label for="padding">Padding (pixels):</label>
+    <input type="number" id="padding" value="5" min="0">
+    <label for="fontSize">Font Size (pixels):</label>
+    <input type="number" id="fontSize" value="80" min="10">
+    <label for="textarea">Enter Hebrew words (one per line):</label>
+    <textarea id="textarea" rows="10" placeholder="Enter Hebrew words, e.g., שלום, לָמֶד, קָ"></textarea>
+    <label for="fileInput">Or upload a .txt file:</label>
+    <input type="file" id="fileInput" accept=".txt">
+    <button id="generateBtn">Generate</button>
+    <div id="output"></div>
+
+    <!-- External Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fontfaceobserver/2.1.0/fontfaceobserver.min.js"></script>
+
+    <script>
+        // Wait for Ezra SIL font to load
+        const font = new FontFaceObserver('Ezra SIL');
+        font.load().then(() => {
+            console.log('Ezra SIL font loaded successfully.');
+        }).catch(() => {
+            console.error('Failed to load Ezra SIL font.');
+            document.getElementById('output').innerHTML = '<p style="color: red;">Error: Failed to load Ezra SIL font. Please ensure font files are in the correct directory.</p>';
+        });
+
+        document.getElementById('generateBtn').addEventListener('click', function() {
+            const padding = parseInt(document.getElementById('padding').value) || 5;
+            const fontSize = parseInt(document.getElementById('fontSize').value) || 80;
+            let words;
+
+            // Validate input
+            if (document.getElementById('fileInput').files.length > 0) {
+                const file = document.getElementById('fileInput').files[0];
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const content = e.target.result;
+                    words = content.split('\n').filter(word => word.trim() !== '');
+                    if (words.length === 0) {
+                        document.getElementById('output').innerHTML = '<p style="color: red;">Error: No valid words found in the file.</p>';
+                        return;
+                    }
+                    generateImages(words, padding, fontSize);
+                };
+                reader.onerror = function() {
+                    document.getElementById('output').innerHTML = '<p style="color: red;">Error: Failed to read the file.</p>';
+                };
+                reader.readAsText(file);
+            } else {
+                words = document.getElementById('textarea').value.split('\n').filter(word => word.trim() !== '');
+                if (words.length === 0) {
+                    document.getElementById('output').innerHTML = '<p style="color: red;">Error: Please enter at least one word.</p>';
+                    return;
+                }
+                generateImages(words, padding, fontSize);
+            }
+        });
+
+        function generateImages(words, padding, fontSize) {
+            document.getElementById('output').innerHTML = '<p>Generating images...</p>';
+            const zip = new JSZip();
+            const promises = [];
+
+            words.forEach((word, index) => {
+                // Create a temporary div for each word
+                const container = document.createElement('div');
+                container.style.direction = 'rtl';
+                container.style.fontFamily = '"Ezra SIL"';
+                container.style.fontSize = `${fontSize}px`;
+                container.style.padding = `${padding}px`;
+                container.style.backgroundColor = 'white';
+                container.style.display = 'inline-block';
+                container.style.lineHeight = 'normal'; // Minimize extra vertical space
+                container.innerText = word;
+
+                // Append temporarily to body for html2canvas
+                document.body.appendChild(container);
+
+                // Capture as PNG
+                const promise = html2canvas(container, { scale: 2 }).then(canvas => {
+                    const imgData = canvas.toDataURL('image/png');
+                    zip.file(`word_${index+1}.png`, imgData.split(',')[1], {base64: true});
+                    document.body.removeChild(container); // Remove after capture
+                }).catch(error => {
+                    console.error('Error generating image for word:', word, error);
+                });
+                promises.push(promise);
+            });
+
+            // Wait for all images to be generated
+            Promise.all(promises).then(() => {
+                zip.generateAsync({type: "blob"}).then(content => {
+                    saveAs(content, "hebrew_words.zip");
+                    document.getElementById('output').innerHTML = '<p>Download complete! Check your downloads folder for hebrew_words.zip.</p>';
+                }).catch(error => {
+                    document.getElementById('output').innerHTML = '<p style="color: red;">Error: Failed to create ZIP file.</p>';
+                    console.error('Error creating ZIP:', error);
+                });
+            }).catch(error => {
+                document.getElementById('output').innerHTML = '<p style="color: red;">Error: Failed to generate images.</p>';
+                console.error('Error generating images:', error);
+            });
+        }
+    </script>
+</body>
+</html>
