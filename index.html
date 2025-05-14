@@ -1,43 +1,4 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -93,6 +54,7 @@
     <label for="fileInput">Or upload a .txt file:</label>
     <input type="file" id="fileInput" accept=".txt">
     <button id="generateBtn">Generate</button>
+    <button id="testDownload">Test Download</button>
     <div id="output"></div>
 
     <!-- External Libraries -->
@@ -109,6 +71,13 @@
         }).catch(() => {
             console.error('Failed to load Ezra SIL font.');
             document.getElementById('output').innerHTML = '<p style="color: red;">Error: Failed to load Ezra SIL font. Please ensure font files are in the correct directory.</p>';
+        });
+
+        // Test download button
+        document.getElementById('testDownload').addEventListener('click', function() {
+            var blob = new Blob(["Hello, world!"], {type: "text/plain;charset=utf-8"});
+            saveAs(blob, "hello.txt");
+            console.log('Test download triggered.');
         });
 
         document.getElementById('generateBtn').addEventListener('click', function() {
@@ -157,7 +126,7 @@
                 container.style.padding = `${padding}px`;
                 container.style.backgroundColor = 'white';
                 container.style.display = 'inline-block';
-                container.style.lineHeight = 'normal'; // Minimize extra vertical space
+                container.style.lineHeight = 'normal';
                 container.innerText = word;
 
                 // Append temporarily to body for html2canvas
@@ -165,9 +134,10 @@
 
                 // Capture as PNG
                 const promise = html2canvas(container, { scale: 2 }).then(canvas => {
+                    console.log(`Canvas created for word: ${word}`);
                     const imgData = canvas.toDataURL('image/png');
                     zip.file(`word_${index+1}.png`, imgData.split(',')[1], {base64: true});
-                    document.body.removeChild(container); // Remove after capture
+                    document.body.removeChild(container);
                 }).catch(error => {
                     console.error('Error generating image for word:', word, error);
                 });
@@ -176,7 +146,9 @@
 
             // Wait for all images to be generated
             Promise.all(promises).then(() => {
+                console.log("ZIP contents:", zip.file(/.*/));
                 zip.generateAsync({type: "blob"}).then(content => {
+                    console.log("ZIP blob created:", content.type, content.size);
                     saveAs(content, "hebrew_words.zip");
                     document.getElementById('output').innerHTML = '<p>Download complete! Check your downloads folder for hebrew_words.zip.</p>';
                 }).catch(error => {
